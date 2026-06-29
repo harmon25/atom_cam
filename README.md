@@ -6,7 +6,7 @@ WiFi camera with web interface, running on **AtomVM** on the **XIAO ESP32-S3 Sen
 
 - **Live camera stream** at `http://<device-ip>/` with auto-refreshing JPEG viewer
 - **Capture to SD card** button saves photos to the onboard microSD
-- **Gallery browser** at `/gallery` lists saved photos with download and delete
+- **Gallery browser** at `/gallery.html` lists saved photos with download and delete
 - **Image serving** from SD card at `/images/<filename>`
 - **WiFi provisioning** via captive portal AP on first boot
 
@@ -63,7 +63,7 @@ mix atomvm.esp32.flash --port /dev/ttyACM0 --baud 460800
 
 After flashing, the device boots, connects to WiFi (or starts a captive portal AP named "AtomCam" on first boot), initializes the camera, mounts the SD card, and starts an HTTP server on port 80.
 
-Open `http://<device-ip>/` in a browser to see the live camera view. Use the **Capture to SD** button to save photos, and click **Gallery** to browse, download, or delete saved images.
+Open `http://<device-ip>/` in a browser to see the live camera view. Use the **Capture to SD** button to save photos, and click **Gallery** to browse, download, or delete saved images. Static HTML (`index.html`, `gallery.html`) is served from `priv/` via `httpd_file_handler`; dynamic endpoints (snapshot, capture, image list) are handled by `AtomCam.HttpHandler`.
 
 ## View Serial Output
 
@@ -82,7 +82,7 @@ picocom /dev/ttyACM0 -b 115200
 | `AtomCam` | `lib/atom_cam.ex` | Boot entrypoint, orchestrates startup sequence |
 | `AtomCam.Camera` | `lib/atom_cam/camera.ex` | Camera init (PSRAM DMA, sensor controls, warm-up) and capture |
 | `AtomCam.Storage` | `lib/atom_cam/storage.ex` | SD card mount/unmount, file read/write/list/delete via POSIX |
-| `AtomCam.HttpHandler` | `lib/atom_cam/http_handler.ex` | HTTP routes, inline HTML, capture-to-SD with retry |
+| `AtomCam.HttpHandler` | `lib/atom_cam/http_handler.ex` | Dynamic HTTP routes: snapshot, capture-to-SD, `/api/images` JSON, image serve/delete |
 | `AtomCam.Wifi` | `lib/atom_cam/wifi.ex` | WiFi provisioning (captive portal AP on first boot) |
 
 ## Known Issues

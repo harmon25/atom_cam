@@ -50,8 +50,17 @@ defmodule AtomCam do
   end
 
   defp start_httpd do
+    handler = %{handler: AtomCam.HttpHandler, handler_config: %{}}
+
     routes = [
-      {[], %{handler: AtomCam.HttpHandler, handler_config: %{}}}
+      # Dynamic endpoints handled by AtomCam.HttpHandler
+      {["snapshot"], handler},
+      {["capture"], handler},
+      {["images"], handler},
+      {["api"], handler},
+      # Catch-all: serve static files from priv/ via httpd_file_handler.
+      # / resolves to priv/index.html automatically.
+      {[], AtomvmHttpd.file_handler_config(:atom_cam)}
     ]
 
     AtomvmHttpd.start(@http_port, routes)

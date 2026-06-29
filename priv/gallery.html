@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AtomCam Gallery</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      background: #111;
+      color: #eee;
+      font-family: system-ui, sans-serif;
+      padding: 1.5rem;
+      max-width: 40rem;
+      margin: 0 auto
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      margin-bottom: 0.5rem
+    }
+
+    .top {
+      margin-bottom: 1rem
+    }
+
+    a {
+      color: #60a5fa;
+      text-decoration: none
+    }
+
+    a:hover {
+      text-decoration: underline
+    }
+
+    ul {
+      list-style: none;
+      padding: 0
+    }
+
+    li {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #333
+    }
+
+    li a.fname {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    button.del {
+      background: #dc2626;
+      color: #fff;
+      border: none;
+      padding: 0.25rem 0.75rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      cursor: pointer
+    }
+
+    button.del:active {
+      background: #b91c1c
+    }
+
+    .empty {
+      color: #888;
+      font-style: italic
+    }
+  </style>
+</head>
+
+<body>
+  <div class="top"><a href="/">&larr; Live View</a></div>
+  <h1>Saved Photos</h1>
+  <ul id="files">
+    <li class="empty">Loading...</li>
+  </ul>
+  <script>
+    function del(name, li) {
+      if (!confirm('Delete ' + name + '?')) return;
+      fetch('/images/' + encodeURIComponent(name), { method: 'DELETE' }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.ok) { li.remove(); checkEmpty(); }
+        else { alert('Delete failed: ' + d.error); }
+      }).catch(function () { alert('Network error'); });
+    }
+    function checkEmpty() {
+      var ul = document.getElementById('files');
+      if (ul && ul.children.length === 0) { ul.innerHTML = '<li class="empty">No photos on SD card.</li>'; }
+    }
+    function render(images) {
+      var ul = document.getElementById('files');
+      if (!images || images.length === 0) {
+        ul.innerHTML = '<li class="empty">No photos on SD card.</li>';
+        return;
+      }
+      ul.innerHTML = '';
+      images.forEach(function (name) {
+        var li = document.createElement('li');
+        li.innerHTML = '<a class="fname" href="/images/' + encodeURIComponent(name) + '" download>' + name + '</a>'
+          + '<button class="del" onclick="del(\'' + name + '\',this.parentNode)">Delete</button>';
+        ul.appendChild(li);
+      });
+    }
+    fetch('/api/images').then(function (r) { return r.json(); }).then(function (d) {
+      render(d.images);
+    }).catch(function () {
+      document.getElementById('files').innerHTML = '<li class="empty">Failed to load images.</li>';
+    });
+  </script>
+</body>
+
+</html>

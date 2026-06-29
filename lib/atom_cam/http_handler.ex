@@ -2,115 +2,20 @@ defmodule AtomCam.HttpHandler do
   @compile {:no_warn_undefined, [:esp32cam]}
 
   @moduledoc """
-  HTTP request handler for AtomCam.
+  HTTP request handler for AtomCam dynamic endpoints.
+
+  Static HTML (index.html, gallery.html) is served directly from priv/ by
+  httpd_file_handler (the catch-all route registered last in atom_cam.ex).
+  This handler only covers the dynamic routes that require device access.
 
   Routes:
-    GET  /                 — live viewer + capture button + gallery link
-    GET  /snapshot         — live JPEG capture (image/jpeg)
-    POST /capture          — capture frame to SD card, return JSON
-    GET  /gallery          — list saved images on SD card
-    GET  /images/<file>    — serve a JPEG from SD card
-    DELETE /images/<file>  — delete a JPEG from SD card
-    *                      — 404
+    GET  /snapshot          — live JPEG capture (image/jpeg)
+    POST /capture           — capture frame to SD card, return JSON
+    GET  /api/images        — list saved .jpg files on SD card, return JSON
+    GET  /images/<file>     — serve a JPEG from SD card
+    DELETE /images/<file>   — delete a JPEG from SD card, return JSON
 
   Implements the httpd_handler behaviour (init_handler/2, handle_http_req/2).
-  """
-
-  # ---------------------------------------------------------------------------
-  # Inline HTML pages
-  # ---------------------------------------------------------------------------
-
-  # Index page: live view + capture button + gallery link.
-  # Uses onload/onerror chaining for the live stream (same pattern as before).
-  # Capture button uses fetch() and shows feedback inline.
-  @index_html """
-  <!DOCTYPE html>
-  <html>
-  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AtomCam</title>
-  <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:#111;color:#eee;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:1rem}
-  #stream{max-width:100%;max-height:70vh;border-radius:4px;margin-bottom:1rem}
-  .bar{display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;justify-content:center}
-  button,a.btn{background:#2563eb;color:#fff;border:none;padding:0.5rem 1.25rem;border-radius:4px;font-size:1rem;cursor:pointer;text-decoration:none;display:inline-block}
-  button:active{background:#1d4ed8}
-  button:disabled{background:#555;cursor:not-allowed}
-  #status{font-size:0.875rem;min-height:1.25rem;color:#86efac}
-  #status.err{color:#fca5a5}
-  </style>
-  </head>
-  <body>
-  <img id="stream">
-  <div class="bar">
-    <button id="cap" onclick="capture()">Capture to SD</button>
-    <a class="btn" href="/gallery">Gallery</a>
-    <span id="status"></span>
-  </div>
-  <script>
-  var img=document.getElementById('stream');
-  function refresh(){
-    var n=new Image();
-    n.onload=n.onerror=function(){img.src=n.src;setTimeout(refresh,200);};
-    n.src='/snapshot?t='+Date.now();
-  }
-  refresh();
-
-  function capture(){
-    var btn=document.getElementById('cap'),st=document.getElementById('status');
-    btn.disabled=true;st.textContent='Capturing...';st.className='';
-    fetch('/capture',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
-      if(d.ok){st.textContent='Saved: '+d.file;st.className='';}
-      else{st.textContent='Error: '+d.error;st.className='err';}
-      btn.disabled=false;
-    }).catch(function(e){st.textContent='Network error';st.className='err';btn.disabled=false;});
-  }
-  </script>
-  </body>
-  </html>
-  """
-
-  # Gallery page: lists saved images with download links and delete buttons.
-  # The file list is injected server-side as a JS array. Delete uses fetch DELETE.
-  @gallery_html_head """
-  <!DOCTYPE html>
-  <html>
-  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AtomCam Gallery</title>
-  <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:#111;color:#eee;font-family:system-ui,sans-serif;padding:1.5rem;max-width:40rem;margin:0 auto}
-  h1{font-size:1.25rem;margin-bottom:0.5rem}
-  .top{margin-bottom:1rem}
-  a{color:#60a5fa;text-decoration:none}
-  a:hover{text-decoration:underline}
-  ul{list-style:none;padding:0}
-  li{display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid #333}
-  li a.fname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  button.del{background:#dc2626;color:#fff;border:none;padding:0.25rem 0.75rem;border-radius:4px;font-size:0.8rem;cursor:pointer}
-  button.del:active{background:#b91c1c}
-  .empty{color:#888;font-style:italic}
-  </style>
-  </head>
-  <body>
-  <div class="top"><a href="/">&larr; Live View</a></div>
-  <h1>Saved Photos</h1>
-  """
-
-  @gallery_html_tail """
-  <script>
-  function del(name,li){
-    if(!confirm('Delete '+name+'?'))return;
-    fetch('/images/'+encodeURIComponent(name),{method:'DELETE'}).then(function(r){return r.json();}).then(function(d){
-      if(d.ok){li.remove();checkEmpty();}
-      else{alert('Delete failed: '+d.error);}
-    }).catch(function(){alert('Network error');});
-  }
-  function checkEmpty(){
-    var ul=document.getElementById('files');
-    if(ul&&ul.children.length===0){ul.innerHTML='<li class="empty">No photos on SD card.</li>';}
-  }
-  </script>
-  </body>
-  </html>
   """
 
   # httpd_handler behaviour -- init_handler/2
@@ -121,17 +26,6 @@ defmodule AtomCam.HttpHandler do
   # ---------------------------------------------------------------------------
   # Route dispatch -- handle_http_req/2
   # ---------------------------------------------------------------------------
-
-  # GET / -- serve the live viewer page
-  def handle_http_req(%{method: :get, path: []}, state) do
-    {:close, %{"Content-Type" => "text/html"}, @index_html}
-    |> with_state(state)
-  end
-
-  # GET /favicon.ico -- suppress browser 404 noise
-  def handle_http_req(%{method: :get, path: [<<"favicon.ico">> | _]}, _state) do
-    {:close, %{"Content-Type" => "image/x-icon"}, ""}
-  end
 
   # GET /snapshot -- live JPEG capture (zero-copy from camera)
   def handle_http_req(%{method: :get, path: [<<"snapshot">> | _]}, state) do
@@ -180,8 +74,8 @@ defmodule AtomCam.HttpHandler do
     end
   end
 
-  # GET /gallery -- list saved images on SD card
-  def handle_http_req(%{method: :get, path: [<<"gallery">> | _]}, state) do
+  # GET /api/images -- list saved .jpg files on SD card as JSON
+  def handle_http_req(%{method: :get, path: [<<"api">>, <<"images">> | _]}, state) do
     files =
       case AtomCam.Storage.list_dir(~c"/sdcard") do
         {:ok, entries} ->
@@ -193,9 +87,9 @@ defmodule AtomCam.HttpHandler do
           []
       end
 
-    html = build_gallery_html(files)
+    json = build_images_json(files)
 
-    {:close, %{"Content-Type" => "text/html"}, html}
+    {:close, %{"Content-Type" => "application/json"}, json}
     |> with_state(state)
   end
 
@@ -278,38 +172,23 @@ defmodule AtomCam.HttpHandler do
     end
   end
 
-  # Build the gallery HTML with a list of files.
-  defp build_gallery_html([]) do
-    :erlang.iolist_to_binary([
-      @gallery_html_head,
-      "<p class=\"empty\">No photos on SD card.</p>\n",
-      @gallery_html_tail
-    ])
+  # Build a JSON object {"images":["NAME.JPG",...]} as a binary.
+  # Uses iolist_to_binary with a hand-built iolist to stay AtomVM-safe
+  # (no Jason/Poison/json module available on device).
+  defp build_images_json([]) do
+    "{\"images\":[]}"
   end
 
-  defp build_gallery_html(files) do
+  defp build_images_json(files) do
     items =
       Enum.map(files, fn name ->
-        bin_name = :erlang.list_to_binary(name)
-
-        [
-          "<li><a class=\"fname\" href=\"/images/",
-          bin_name,
-          "\" download>",
-          bin_name,
-          "</a><button class=\"del\" onclick=\"del('",
-          bin_name,
-          "',this.parentNode)\">Delete</button></li>\n"
-        ]
+        bin = :erlang.list_to_binary(name)
+        ["\"", bin, "\""]
       end)
 
-    :erlang.iolist_to_binary([
-      @gallery_html_head,
-      "<ul id=\"files\">\n",
-      items,
-      "</ul>\n",
-      @gallery_html_tail
-    ])
+    joined = :lists.join(",", items)
+
+    :erlang.iolist_to_binary(["{\"images\":[", joined, "]}"])
   end
 
   # Retry capture up to max_retries times. Each failed attempt waits

@@ -31,18 +31,35 @@ The boot process holds the SD card mount resource in `keep_alive/1` — this is 
 
 ## Web interface
 
-HTTP server runs on port 80 (single-threaded, `atomvm_httpd`). All routes are in `lib/atom_cam/http_handler.ex`.
+HTTP server runs on port 80 (single-threaded, `atomvm_httpd`). Dynamic routes are handled by `AtomCam.HttpHandler`; static HTML is served by `httpd_file_handler` from the `priv/` directory.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Live camera view + "Capture to SD" button + Gallery link |
-| GET | `/snapshot` | Live JPEG capture (image/jpeg, zero-copy with `:binary.copy`) |
-| POST | `/capture` | Capture frame to SD card, returns JSON `{ok, file}` (retries up to 3x) |
-| GET | `/gallery` | List saved `.jpg` files with download links + delete buttons |
-| GET | `/images/<file>` | Serve a JPEG file from SD card |
-| DELETE | `/images/<file>` | Delete a file from SD card, returns JSON |
+| Method | Path | Handler | Description |
+|--------|------|---------|-------------|
+| GET | `/` | `httpd_file_handler` | Serves `priv/index.html` — live camera view + "Capture to SD" button + Gallery link |
+| GET | `/gallery.html` | `httpd_file_handler` | Serves `priv/gallery.html` — client-side gallery (fetches `/api/images`) |
+| GET | `/snapshot` | `AtomCam.HttpHandler` | Live JPEG capture (image/jpeg, zero-copy with `:binary.copy`) |
+| POST | `/capture` | `AtomCam.HttpHandler` | Capture frame to SD card, returns JSON `{ok, file}` (retries up to 3x) |
+| GET | `/api/images` | `AtomCam.HttpHandler` | List saved `.jpg` files on SD card, returns JSON `{images: [...]}` |
+| GET | `/images/<file>` | `AtomCam.HttpHandler` | Serve a JPEG file from SD card |
+| DELETE | `/images/<file>` | `AtomCam.HttpHandler` | Delete a file from SD card, returns JSON |
 
-All HTML is inline in `@index_html`, `@gallery_html_head`, `@gallery_html_tail` module attributes. No `priv/` directory.
+### Static HTML in `priv/`
+
+HTML pages live in `priv/` and are bundled into `priv.avm` by `mix atomvm.packbeam` (see `deps/exatomvm/lib/mix/tasks/packbeam.ex`). At runtime, `httpd_file_handler` reads them via `atomvm:read_priv(:atom_cam, path)`.
+
+The routing in `atom_cam.ex` registers prefix routes for all dynamic endpoints first, then falls through to the file handler catch-all:
+
+```elixir
+routes = [
+  {[<<"snapshot">>], handler},
+  {[<<"capture">>],  handler},
+  {[<<"images">>],   handler},
+  {[<<"api">>],      handler},
+  {[], AtomvmHttpd.file_handler_config(:atom_cam)}   # catch-all → priv/
+]
+```
+
+The file handler automatically resolves `GET /` to `priv/index.html` (documented in `deps/atomvm_httpd/README.md`).
 
 ## Module overview
 
@@ -51,7 +68,7 @@ All HTML is inline in `@index_html`, `@gallery_html_head`, `@gallery_html_tail` 
 | `AtomCam` | `lib/atom_cam.ex` | Boot entrypoint, orchestrates startup |
 | `AtomCam.Camera` | `lib/atom_cam/camera.ex` | Camera init (PSRAM DMA, sensor controls, warm-up) and capture |
 | `AtomCam.Storage` | `lib/atom_cam/storage.ex` | SD card mount/unmount, file read/write/list/delete via POSIX |
-| `AtomCam.HttpHandler` | `lib/atom_cam/http_handler.ex` | HTTP routes, inline HTML, capture-to-SD with retry |
+| `AtomCam.HttpHandler` | `lib/atom_cam/http_handler.ex` | Dynamic HTTP routes: snapshot, capture-to-SD with retry, `/api/images` JSON list, image serve/delete |
 | `AtomCam.Wifi` | `lib/atom_cam/wifi.ex` | WiFi provisioning (captive portal AP on first boot) |
 
 ## Pitfalls learned the hard way

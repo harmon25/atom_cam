@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AtomCam</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      background: #111;
+      color: #eee;
+      font-family: system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 1rem
+    }
+
+    #stream {
+      max-width: 100%;
+      max-height: 70vh;
+      border-radius: 4px;
+      margin-bottom: 1rem
+    }
+
+    .bar {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center
+    }
+
+    button,
+    a.btn {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1.25rem;
+      border-radius: 4px;
+      font-size: 1rem;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block
+    }
+
+    button:active {
+      background: #1d4ed8
+    }
+
+    button:disabled {
+      background: #555;
+      cursor: not-allowed
+    }
+
+    #status {
+      font-size: 0.875rem;
+      min-height: 1.25rem;
+      color: #86efac
+    }
+
+    #status.err {
+      color: #fca5a5
+    }
+  </style>
+</head>
+
+<body>
+  <img id="stream">
+  <div class="bar">
+    <button id="cap" onclick="capture()">Capture to SD</button>
+    <a class="btn" href="/gallery.html">Gallery</a>
+    <span id="status"></span>
+  </div>
+  <script>
+    var img = document.getElementById('stream');
+    function refresh() {
+      var n = new Image();
+      n.onload = n.onerror = function () { img.src = n.src; setTimeout(refresh, 100); };
+      n.src = '/snapshot?t=' + Date.now();
+    }
+    refresh();
+
+    function capture() {
+      var btn = document.getElementById('cap'), st = document.getElementById('status');
+      btn.disabled = true; st.textContent = 'Capturing...'; st.className = '';
+      fetch('/capture', { method: 'POST' }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.ok) { st.textContent = 'Saved: ' + d.file; st.className = ''; }
+        else { st.textContent = 'Error: ' + d.error; st.className = 'err'; }
+        btn.disabled = false;
+      }).catch(function (e) { st.textContent = 'Network error'; st.className = 'err'; btn.disabled = false; });
+    }
+  </script>
+</body>
+
+</html>
