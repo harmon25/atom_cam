@@ -26,9 +26,9 @@ defmodule AtomCam.MixProject do
   defp deps do
     [
       {:exatomvm, github: "atomvm/ExAtomVM", runtime: false},
-      {:wifi_wiz, github: "harmon25/wifi_wiz", branch: "scan"},
+      {:wifi_wiz, github: "harmon25/wifi_wiz", branch: "main"},
       {:esp32cam, github: "petermm/atomvm_esp32cam", branch: "multiple_boards"},
-      {:atomvm_httpd, github: "harmon25/atomvm_httpd", branch: "improvements"}
+      {:atomvm_httpd, github: "harmon25/atomvm_httpd", branch: "main"}
     ]
   end
 end

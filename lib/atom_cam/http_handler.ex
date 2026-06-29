@@ -247,22 +247,15 @@ defmodule AtomCam.HttpHandler do
   # Internal helpers
   # ---------------------------------------------------------------------------
 
-  # Capture a JPEG frame as a binary without writing to disk.
-  # Deep-copies the binary before releasing the framebuffer so the HTTP server
-  # can send it in chunks without racing against the next capture reusing the
-  # same PSRAM region. Without this copy the bottom half of images gets
-  # corrupted with green/pink artifact bands.
+  # Capture a JPEG frame as a regular heap binary.
+  # Uses esp32cam:capture/0 which returns a copied binary, then does an
+  # additional binary.copy/1 to ensure the data is in a contiguous heap
+  # region that atomvm_httpd can send over TCP without issues. Without
+  # this copy, responses can stall or send partial/corrupted data.
   defp capture_jpeg do
-    case :esp32cam.capture_frame() do
-      {:ok, frame} ->
-        result =
-          case :esp32cam.frame_binary(frame) do
-            {:ok, binary} -> {:ok, :binary.copy(binary)}
-            {:error, reason} -> {:error, reason}
-          end
-
-        :esp32cam.release_frame(frame)
-        result
+    case :esp32cam.capture() do
+      {:ok, binary} ->
+        {:ok, :binary.copy(binary)}
 
       {:error, reason} ->
         {:error, reason}
@@ -319,10 +312,9 @@ defmodule AtomCam.HttpHandler do
     ])
   end
 
-  # Retry capture up to max_retries times. The OV3660 camera in PSRAM DMA
-  # mode frequently fails with NO-EOI/timeout errors but eventually
-  # produces valid frames. Each failed attempt waits briefly to let the
-  # camera hardware reset its internal JPEG encoder state.
+  # Retry capture up to max_retries times. Each failed attempt waits
+  # briefly to let the camera hardware reset its internal JPEG encoder
+  # state before trying again.
   defp capture_to_sd_with_retry(_path, 0), do: {:error, :capture_failed}
 
   defp capture_to_sd_with_retry(path, retries) do
@@ -330,8 +322,9 @@ defmodule AtomCam.HttpHandler do
       :ok ->
         :ok
 
-      {:error, _} ->
-        Process.sleep(200)
+      {:error, reason} ->
+        :io.format("SD capture retry (~p left): ~p~n", [retries - 1, reason])
+        Process.sleep(300)
         capture_to_sd_with_retry(path, retries - 1)
     end
   end
