@@ -83,7 +83,7 @@
     var img = document.getElementById('stream');
     function refresh() {
       var n = new Image();
-      n.onload = n.onerror = function () { img.src = n.src; setTimeout(refresh, 100); };
+      n.onload = n.onerror = function () { img.src = n.src; setTimeout(refresh, 33); };
       n.src = '/snapshot?t=' + Date.now();
     }
     refresh();
